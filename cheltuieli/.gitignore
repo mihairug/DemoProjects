@@ -1,5 +1,5 @@
 # datele tale rămân doar pe PC
-date/
+/date/
 *.csv
 !tests/date/*.csv
 .venv/
