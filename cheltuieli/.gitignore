@@ -1,0 +1,7 @@
+# datele tale rămân doar pe PC
+/date/
+*.csv
+!tests/date/*.csv
+.venv/
+__pycache__/
+.pytest_cache/
