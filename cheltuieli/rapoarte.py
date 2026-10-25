@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import pandas as pd
 
@@ -23,6 +24,18 @@ def nume_grup(comerciant: str) -> str:
     s = re.sub(r"\*[A-Z0-9]{8,}$", "", comerciant.strip())
     s = re.sub(r"\s+\S*\d\S*.*$", "", s)
     return s.strip() or comerciant
+
+
+def _simplu(text: str) -> str:
+    """„Mega Image” și „MEGAIMAGE”, „cafea” și „CAFEA” arată la fel: fără diacritice, spații, semne."""
+    fara_diacritice = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", fara_diacritice.lower())
+
+
+def potriveste(nume: str, cautare: str) -> bool:
+    """Toate cuvintele căutate apar în nume, oriunde, fără să conteze literele mari sau spațiile."""
+    simplu = _simplu(nume)
+    return all(_simplu(cuvant) in simplu for cuvant in cautare.split())
 
 
 def cheltuieli(df: pd.DataFrame) -> pd.DataFrame:

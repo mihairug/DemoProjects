@@ -112,3 +112,12 @@ def test_sterge_tot_si_alegerile(db):
     db.seteaza_buget("Alimente", 500)
     db.sterge_tot(si_alegerile=True)
     assert not db.alegeri_comercianti() and not db.bugete()
+
+
+def test_cautare_comerciant():
+    assert r.potriveste("MEGAIMAGE 0261 CRANGS25SG", "mega image")
+    assert r.potriveste("PayU*eMAG.ro", "emag")
+    assert r.potriveste("ARE MARINA S R L", "marina srl")
+    assert r.potriveste("CAFENEAUA BUNĂ", "buna")
+    assert not r.potriveste("PROFI BUCURESTI 13", "lidl")
+    assert not r.potriveste("MEGAIMAGE 0261", "mega lidl")

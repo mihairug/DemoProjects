@@ -305,20 +305,32 @@ with tab_com:
         "Alege categoria o singură dată pentru fiecare comerciant; se aplică automat și la importurile viitoare. "
         "Cei „De identificat” sunt primii în listă."
     )
-    doar_necunoscuti = st.toggle("Doar cei de identificat", value=not necunoscute.empty)
+    cautare = st.text_input("Caută comerciant", placeholder="ex. mega image, emag, marina",
+                            help="Caută în tot istoricul, după o parte din nume. Literele mari, spațiile "
+                                 "și diacriticele nu contează.").strip()
+    doar_necunoscuti = st.toggle("Doar cei de identificat", value=not necunoscute.empty, disabled=bool(cautare))
     com = r.comercianti(toate)  # pe tot istoricul, nu doar în perioada aleasă
-    if doar_necunoscuti:
+    if cautare:
+        com = com[com["comerciant"].map(lambda c: r.potriveste(c, cautare))]
+    elif doar_necunoscuti:
         com = com[com["de_identificat"]]
     oras = toate.set_index("comerciant")["detalii"].map(lambda d: parser_ing.localitate(d.get("Tranzactie la", "")))
     oras = oras[~oras.index.duplicated()]
     com = com.assign(cauta=[
         "https://www.google.com/search?q=" + quote_plus(f"{c} {oras.get(c, '')}") for c in com["comerciant"]
     ]).reset_index(drop=True)
+    cheie_editor = f"editor_com_{cautare}"  # altă căutare, alt tabel: modificările nu se amestecă
     if com.empty:
-        st.success("Toți comercianții au o categorie.")
+        if cautare:
+            st.info(f"Niciun comerciant nu se potrivește cu „{cautare}”.")
+        else:
+            st.success("Toți comercianții au o categorie.")
     else:
+        if cautare:
+            gasiti = "un comerciant găsit" if len(com) == 1 else f"{len(com)} comercianți găsiți"
+            st.caption(f"{gasiti} · {r.lei(com['total'].sum(), 2)} în {com['plati'].sum()} plăți")
         st.data_editor(
-            com, key="editor_com", hide_index=True, use_container_width=True, height=600,
+            com, key=cheie_editor, hide_index=True, use_container_width=True, height=600,
             column_order=["comerciant", "categorie", "plati", "medie", "total", "ultima", "sursa", "cauta"],
             disabled=["comerciant", "plati", "medie", "total", "ultima", "sursa", "cauta"],
             column_config={
@@ -333,7 +345,24 @@ with tab_com:
                 "cauta": st.column_config.LinkColumn("Caută online", display_text="caută"),
             },
         )
-        salveaza_editari("editor_com", com, "comerciant", db.alege_pentru_comerciant)
+        salveaza_editari(cheie_editor, com, "comerciant", db.alege_pentru_comerciant)
+
+        if cautare:
+            st.subheader("Plățile găsite")
+            plati = r.cheltuieli(toate)
+            plati = plati[plati["comerciant"].isin(com["comerciant"])].sort_values("data", ascending=False)
+            st.dataframe(
+                plati[["data", "comerciant", "categorie", "suma", "valuta"]], hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "data": st.column_config.DateColumn("Ziua", format="DD.MM.YYYY"),
+                    "comerciant": "Comerciant", "categorie": "Categorie",
+                    "suma": st.column_config.NumberColumn("Lei", format="%.2f"), "valuta": "În valută",
+                },
+            )
+            pe_luna = plati.groupby(plati["data"].dt.to_period("M"))["suma"].sum()
+            st.caption("Pe luni: " + " · ".join(
+                f"{r.LUNI[p.month - 1]} {r.lei(v)}" for p, v in pe_luna.items()))
 
 # --- Bugete --------------------------------------------------------------------------
 
