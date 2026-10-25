@@ -370,7 +370,8 @@ with tab_buget:
     st.write("Opțional: pune o limită lunară pe categoriile pe care vrei să le ții sub control. "
              "Lasă gol unde nu vrei buget.")
     bugete = db.bugete()
-    cat_buget = [c for c, t in categorii.CATEGORII.items() if t in ("variabil", "fix") and c != categorii.NECUNOSCUT]
+    cat_buget = [c for c, t in categorii.CATEGORII.items()
+                 if t in ("variabil", "fix", "exceptional") and c != categorii.NECUNOSCUT]
     luna_curenta = pd.Timestamp(ultima).to_period("M")
     istoric = r.cheltuieli(toate).assign(luna=lambda x: x["data"].dt.to_period("M"))
     # doar lunile încheiate și acoperite complet de extrase
