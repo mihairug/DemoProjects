@@ -15,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 import categorii
+from constante import Cat, Col, Ing, Setare, Sursa
 from parser_ing import Extras, Tranzactie
 
 SCHEMA = """
@@ -49,8 +50,8 @@ CREATE TABLE IF NOT EXISTS setari (
 """
 
 COLOANE = [
-    "id", "data", "data_decontare", "tip_operatiune", "debit", "credit", "sold", "comerciant",
-    "detalii", "valuta", "categorie", "sursa_categorie", "tip",
+    Col.ID, Col.DATA, Col.DATA_DECONTARE, Col.TIP_OPERATIUNE, Col.DEBIT, Col.CREDIT, Col.SOLD, Col.COMERCIANT,
+    Col.DETALII, Col.VALUTA, Col.CATEGORIE, Col.SURSA, Col.TIP,
 ]
 
 
@@ -65,7 +66,7 @@ class Baza:
     def importa(self, extras: Extras) -> tuple[int, int]:
         """Adaugă tranzacțiile noi. Întoarce (noi, deja existente)."""
         if extras.titular:
-            self.seteaza("titular", extras.titular)
+            self.seteaza(Setare.TITULAR, extras.titular)
         acum = datetime.now().isoformat(timespec="seconds")
         noi = 0
         with self.con:
@@ -138,7 +139,7 @@ class Baza:
     # --- citire ---------------------------------------------------------------
 
     def tranzactii(self) -> pd.DataFrame:
-        titular = self.setare("titular")
+        titular = self.setare(Setare.TITULAR)
         pe_comerciant = self.alegeri_comercianti()
         pe_tranzactie = dict(self.con.execute("SELECT id, categorie FROM categorie_tranzactie"))
         randuri = []
@@ -149,14 +150,14 @@ class Baza:
             t = Tranzactie(id_, date.fromisoformat(data), date.fromisoformat(decontare), tip_op,
                            debit, credit, sold, comerciant, detalii)
             if id_ in pe_tranzactie:
-                cat, sursa = pe_tranzactie[id_], "tranzactie"
+                cat, sursa = pe_tranzactie[id_], Sursa.TRANZACTIE
             elif comerciant in pe_comerciant:
-                cat, sursa = pe_comerciant[comerciant], "comerciant"
+                cat, sursa = pe_comerciant[comerciant], Sursa.COMERCIANT
             else:
-                cat, sursa = categorii.categorie_automata(t, titular), "automat"
+                cat, sursa = categorii.categorie_automata(t, titular), Sursa.AUTOMAT
             if cat not in categorii.CATEGORII:  # o categorie redenumită între timp
-                cat = categorii.NECUNOSCUT
-            valuta = " ".join(detalii.get("Suma", "").split())
+                cat = Cat.NECUNOSCUT
+            valuta = " ".join(detalii.get(Ing.SUMA_VALUTA, "").split())
             randuri.append((id_, pd.Timestamp(data), pd.Timestamp(decontare), tip_op, debit, credit, sold,
                             comerciant, detalii, valuta, cat, sursa, categorii.CATEGORII[cat]))
         return pd.DataFrame(randuri, columns=COLOANE)

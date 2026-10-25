@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-import categorii
 import parser_ing
 import rapoarte as r
+from constante import Cat
 from stocare import Baza
 
 EXEMPLU = Path(__file__).parent / "date" / "extras_exemplu.csv"
@@ -25,7 +25,7 @@ def cat(df, comerciant):
 def test_categorii_automate(db):
     df = db.tranzactii()
     assert cat(df, "PROFI BUCURESTI 13") == "Alimente"
-    assert cat(df, "FIRMA NECUNOSCUTA SRL") == categorii.NECUNOSCUT
+    assert cat(df, "FIRMA NECUNOSCUTA SRL") == Cat.NECUNOSCUT
     assert cat(df, "5506/OFFICE 13 SEPTEMBRIE") == "Numerar (ATM)"
     assert cat(df, "Netflix.com") == "Abonamente digitale"
     assert cat(df, "Popescu Ion") == "Transfer în cont propriu"  # nume inversat față de titular

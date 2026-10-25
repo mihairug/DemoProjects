@@ -17,10 +17,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
-LUNI = {
-    "ianuarie": 1, "februarie": 2, "martie": 3, "aprilie": 4, "mai": 5, "iunie": 6,
-    "iulie": 7, "august": 8, "septembrie": 9, "octombrie": 10, "noiembrie": 11, "decembrie": 12,
-}
+from constante import LUNI, Ing
+
+_LUNA = {nume: i for i, nume in enumerate(LUNI, start=1)}
 _RAND_PRINCIPAL = re.compile(r"^(\d{1,2}) ([a-zăâîșț]+) (\d{4})$", re.I)
 _DATA_SCURTA = re.compile(r"^(\d{2})-(\d{2})-(\d{4})$")
 
@@ -59,9 +58,9 @@ def numar(text: str) -> float:
 
 def _data_lunga(text: str) -> date | None:
     m = _RAND_PRINCIPAL.match(text.strip())
-    if not m or m.group(2).lower() not in LUNI:
+    if not m or m.group(2).lower() not in _LUNA:
         return None
-    return date(int(m.group(3)), LUNI[m.group(2).lower()], int(m.group(1)))
+    return date(int(m.group(3)), _LUNA[m.group(2).lower()], int(m.group(1)))
 
 
 def _data_scurta(text: str) -> date | None:
@@ -95,8 +94,8 @@ def localitate(tranzactie_la: str) -> str:
 # Pozițiile coloanelor din exporturile vechi, folosite până la primul rând de antet.
 # ING a mutat coloanele între exporturi (ex. fără „Balanta”, cu „Debit” mutat la dreapta),
 # așa că le căutăm după titlu în fiecare antet „Data,,,Detalii tranzactie,...”.
-COLOANE_IMPLICITE = {"Detalii tranzactie": 3, "Debit": 4, "Credit": 6, "Balanta": 7}
-_COLOANE_OBLIGATORII = ("Detalii tranzactie", "Debit", "Credit")
+COLOANE_IMPLICITE = {Ing.COL_DETALII: 3, Ing.COL_DEBIT: 4, Ing.COL_CREDIT: 6, Ing.COL_SOLD: 7}
+_COLOANE_OBLIGATORII = (Ing.COL_DETALII, Ing.COL_DEBIT, Ing.COL_CREDIT)
 
 
 def _coloane(antet: list[str]) -> dict[str, int]:
@@ -121,26 +120,26 @@ def citeste(continut: bytes | str) -> Extras:
     for rand in csv.reader(io.StringIO(text)):
         rand = rand + [""] * max(0, max(col.values()) + 1 - len(rand))
         prima = rand[0].strip()
-        if prima.startswith("Titular cont:"):
+        if prima.startswith(Ing.TITULAR):
             titular = re.sub(r"^(DL|DNA|D-NA|D-L)\.?\s+", "", prima.split(":", 1)[1].strip(), flags=re.I)
             curenta = None
             continue
-        if prima == "Data":
+        if prima == Ing.ANTET:
             col = _coloane(rand)
             curenta = None
             continue
         data = _data_lunga(prima)
         if data:
-            sold = rand[col["Balanta"]].strip() if "Balanta" in col else ""
+            sold = rand[col[Ing.COL_SOLD]].strip() if Ing.COL_SOLD in col else ""
             curenta = {
-                "decontare": data, "tip": rand[col["Detalii tranzactie"]].strip(),
-                "debit": numar(rand[col["Debit"]]), "credit": numar(rand[col["Credit"]]),
+                "decontare": data, "tip": rand[col[Ing.COL_DETALII]].strip(),
+                "debit": numar(rand[col[Ing.COL_DEBIT]]), "credit": numar(rand[col[Ing.COL_CREDIT]]),
                 "sold": numar(sold) if sold else None, "detalii": {},
             }
             brute.append(curenta)
         elif (curenta is not None and not prima and not rand[1].strip()
-              and rand[col["Detalii tranzactie"]].strip()):
-            cheie, _, valoare = rand[col["Detalii tranzactie"]].strip().partition(":")
+              and rand[col[Ing.COL_DETALII]].strip()):
+            cheie, _, valoare = rand[col[Ing.COL_DETALII]].strip().partition(":")
             curenta["detalii"][cheie.strip()] = valoare.strip()
         else:
             # semnături, antet de tabel etc. închid tranzacția curentă
@@ -150,10 +149,10 @@ def citeste(continut: bytes | str) -> Extras:
     aparitii: dict[str, int] = {}
     for b in brute:
         d = b["detalii"]
-        data = _data_scurta(d.get("Data autorizarii", "")) or b["decontare"]
+        data = _data_scurta(d.get(Ing.DATA_AUTORIZARII, "")) or b["decontare"]
         comerciant = (
-            nume_comerciant(d["Tranzactie la"]) if d.get("Tranzactie la")
-            else d.get("Beneficiar") or d.get("Ordonator") or b["tip"]
+            nume_comerciant(d[Ing.TRANZACTIE_LA]) if d.get(Ing.TRANZACTIE_LA)
+            else d.get(Ing.BENEFICIAR) or d.get(Ing.ORDONATOR) or b["tip"]
         )
         baza = _cheie(b, d, data, comerciant)
         # două tranzacții identice fără referință în același fișier rămân distincte
@@ -172,8 +171,8 @@ def _cheie(b: dict, d: dict, data: date, comerciant: str) -> str:
     Soldul nu intră în cheie: depinde de ordinea decontărilor din aceeași zi.
     """
     suma = f"{b['debit']:.2f}/{b['credit']:.2f}"
-    if d.get("Numar autorizare"):
-        return f"aut|{d['Numar autorizare']}|{data}|{suma}|{comerciant}"
-    if d.get("Referinta"):
-        return f"ref|{d['Referinta']}|{suma}"
+    if d.get(Ing.NUMAR_AUTORIZARE):
+        return f"aut|{d[Ing.NUMAR_AUTORIZARE]}|{data}|{suma}|{comerciant}"
+    if d.get(Ing.REFERINTA):
+        return f"ref|{d[Ing.REFERINTA]}|{suma}"
     return f"alt|{b['decontare']}|{b['tip']}|{suma}|{sorted(d.items())}"

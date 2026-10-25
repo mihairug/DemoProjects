@@ -77,11 +77,13 @@ Orice plată poate fi mutată în categoria „Excepționale” ca să nu strice
 |---|---|
 | `app.py` | interfața (Streamlit) |
 | `parser_ing.py` | citește formatul CSV ING (o tranzacție pe mai multe rânduri) |
-| `categorii.py` | lista de categorii și regulile automate după numele comerciantului |
+| `constante.py` | valorile folosite în mai multe locuri: numele categoriilor, tipurile, cheile din extrasul ING, coloanele, culorile |
+| `categorii.py` | tipul fiecărei categorii și regulile automate după numele comerciantului |
 | `stocare.py` | baza de date SQLite și alegerile tale de categorii |
 | `rapoarte.py` | calculele pentru rapoarte |
 
 Regulile automate sunt în `categorii.py` (`REGULI`): o expresie regulată pe
-numele comerciantului și categoria. Categoriile noi se adaugă în `CATEGORII`.
+numele comerciantului și categoria. O categorie nouă se adaugă în `constante.Cat`
+(numele) și în `categorii.CATEGORII` (tipul ei).
 
 Teste: `pip install -r requirements-dev.txt`, apoi `pytest`.
