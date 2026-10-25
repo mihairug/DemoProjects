@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -76,6 +76,21 @@ with st.sidebar.expander("Import din folderul de descărcări"):
             st.warning("Nu am găsit niciun fișier.")
         importa_fisiere([(p.name, p.read_bytes()) for p in gasite])
     st.caption("Poți importa același fișier de mai multe ori: tranzacțiile existente nu se dublează.")
+
+with st.sidebar.expander("Șterge datele"):
+    st.write("Șterge toate tranzacțiile din baza de date, de exemplu ca să reimporți extrasele de la zero.")
+    si_alegerile = st.checkbox("Șterge și categoriile alese de mine și bugetele")
+    sigur = st.checkbox("Da, vreau să șterg tot")
+    if st.button("Șterge tot", type="primary", disabled=not sigur):
+        copie = BAZA.with_name(f"{BAZA.stem}_inainte_de_stergere_{datetime.now():%Y-%m-%d_%H-%M-%S}.db")
+        db.backup(copie)
+        n = db.sterge_tot(si_alegerile)
+        st.session_state.pop("zi", None)
+        st.session_state["mesaj_stergere"] = f"Am șters {n} tranzacții. Copie de siguranță: {copie.name}"
+        st.rerun()
+    st.caption("Înainte de ștergere se face automat o copie a bazei de date în folderul `date`.")
+if "mesaj_stergere" in st.session_state:
+    st.sidebar.success(st.session_state.pop("mesaj_stergere"))
 
 toate = db.tranzactii()
 if toate.empty:
@@ -180,11 +195,13 @@ with tab_zile:
 
     puncte = (ev or {}).get("selection", {}).get("zi") or []
     ales = puncte[0].get("ziua") if puncte else None
+    zi_maxima = z.loc[z["suma"].idxmax(), "data"].date() if z["suma"].any() else pana_la
     if ales:
         zi = pd.to_datetime(ales, format="%d.%m.%Y").date()
     else:
-        zi_maxima = z.loc[z["suma"].idxmax(), "data"].date() if z["suma"].any() else pana_la
         zi = st.session_state.get("zi", zi_maxima)
+    if not de_la <= zi <= pana_la:  # ziua aleasă înainte nu e în perioada nouă
+        zi = zi_maxima
     zi = st.date_input("Ziua", zi, min_value=de_la, max_value=pana_la, format="DD.MM.YYYY")
     st.session_state["zi"] = zi
 

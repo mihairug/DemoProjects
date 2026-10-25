@@ -79,6 +79,24 @@ class Baza:
                 noi += cur.rowcount
         return noi, len(extras.tranzactii) - noi
 
+    def sterge_tot(self, si_alegerile: bool = False) -> int:
+        """Șterge toate tranzacțiile. Cu `si_alegerile`, și categoriile alese de tine
+        pe comercianți și pe tranzacții, plus bugetele. Întoarce câte tranzacții s-au șters."""
+        with self.con:
+            n = self.con.execute("DELETE FROM tranzactii").rowcount
+            # alegerile rămase se aplică din nou la reimport: ID-urile tranzacțiilor sunt stabile
+            if si_alegerile:
+                self.con.execute("DELETE FROM categorie_tranzactie")
+                self.con.execute("DELETE FROM categorie_comerciant")
+                self.con.execute("DELETE FROM bugete")
+        return n
+
+    def backup(self, cale: str | Path) -> None:
+        dest = sqlite3.connect(str(cale))
+        with dest:
+            self.con.backup(dest)
+        dest.close()
+
     # --- setări și alegeri ----------------------------------------------------
 
     def seteaza(self, cheie: str, valoare: str | None) -> None:

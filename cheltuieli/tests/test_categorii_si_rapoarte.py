@@ -92,3 +92,22 @@ def test_pe_luni_are_totalul_pe_primul_rand(db):
     t = r.pe_luni(db.tranzactii())
     assert t.index[0] == "Total"
     assert t.iloc[0].sum() == t.iloc[1:].sum().sum()
+
+
+def test_sterge_tot_pastreaza_alegerile(db, tmp_path):
+    db.alege_pentru_comerciant("FIRMA NECUNOSCUTA SRL", "Altele")
+    db.seteaza_buget("Alimente", 500)
+    db.backup(tmp_path / "copie.db")
+    assert db.sterge_tot() == 9
+    assert db.tranzactii().empty
+    assert db.alegeri_comercianti() and db.bugete()
+    assert len(Baza(tmp_path / "copie.db").tranzactii()) == 9
+    db.importa(parser_ing.citeste(EXEMPLU.read_bytes()))
+    assert cat(db.tranzactii(), "FIRMA NECUNOSCUTA SRL") == "Altele"
+
+
+def test_sterge_tot_si_alegerile(db):
+    db.alege_pentru_comerciant("FIRMA NECUNOSCUTA SRL", "Altele")
+    db.seteaza_buget("Alimente", 500)
+    db.sterge_tot(si_alegerile=True)
+    assert not db.alegeri_comercianti() and not db.bugete()
