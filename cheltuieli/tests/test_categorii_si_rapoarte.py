@@ -64,8 +64,9 @@ def test_cheltuieli_exclud_transferuri_proprii_si_incasari(db):
 def test_pe_zile_completeaza_zilele_goale(db):
     z = r.pe_zile(db.tranzactii(), date(2026, 10, 14), date(2026, 10, 20))
     assert len(z) == 7
-    assert z.set_index("data").loc["2026-10-20", "suma"] == round(21.18 + 1086.51, 2)
-    assert z.set_index("data").loc["2026-10-15", "suma"] == 0  # rata e cost fix, nu variabil
+    assert z.set_index("data").loc["2026-10-20", "suma"] == round(21.18 + 1086.51 + 900, 2)  # și numerarul
+    assert z.set_index("data").loc["2026-10-15", "suma"] == 1721.89  # și costurile fixe intră
+    assert z.set_index("data").loc["2026-10-19", "suma"] == 140  # transferul în cont propriu nu intră
     assert z.set_index("data").loc["2026-10-16", "suma"] == -50  # rambursarea eMAG
 
 
@@ -86,3 +87,37 @@ def test_buget(db):
     b = r.buget(db.tranzactii(), {"Alimente": 10}, pd.Period("2026-10", "M"))
     rand = b.iloc[0]
     assert rand["cheltuit"] == 21.18 and rand["ramas"] < 0
+
+
+def test_pe_luni_are_totalul_pe_primul_rand(db):
+    t = r.pe_luni(db.tranzactii())
+    assert t.index[0] == "Total"
+    assert t.iloc[0].sum() == t.iloc[1:].sum().sum()
+
+
+def test_sterge_tot_pastreaza_alegerile(db, tmp_path):
+    db.alege_pentru_comerciant("FIRMA NECUNOSCUTA SRL", "Altele")
+    db.seteaza_buget("Alimente", 500)
+    db.backup(tmp_path / "copie.db")
+    assert db.sterge_tot() == 9
+    assert db.tranzactii().empty
+    assert db.alegeri_comercianti() and db.bugete()
+    assert len(Baza(tmp_path / "copie.db").tranzactii()) == 9
+    db.importa(parser_ing.citeste(EXEMPLU.read_bytes()))
+    assert cat(db.tranzactii(), "FIRMA NECUNOSCUTA SRL") == "Altele"
+
+
+def test_sterge_tot_si_alegerile(db):
+    db.alege_pentru_comerciant("FIRMA NECUNOSCUTA SRL", "Altele")
+    db.seteaza_buget("Alimente", 500)
+    db.sterge_tot(si_alegerile=True)
+    assert not db.alegeri_comercianti() and not db.bugete()
+
+
+def test_cautare_comerciant():
+    assert r.potriveste("MEGAIMAGE 0261 CRANGS25SG", "mega image")
+    assert r.potriveste("PayU*eMAG.ro", "emag")
+    assert r.potriveste("ARE MARINA S R L", "marina srl")
+    assert r.potriveste("CAFENEAUA BUNĂ", "buna")
+    assert not r.potriveste("PROFI BUCURESTI 13", "lidl")
+    assert not r.potriveste("MEGAIMAGE 0261", "mega lidl")

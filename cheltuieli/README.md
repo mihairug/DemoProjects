@@ -46,19 +46,21 @@ streamlit run app.py
 
 ### Ce intră în „Cheltuieli”
 
-| Tip | Exemple | În total? | În calendar? |
+| Tip | Exemple | În total și în calendar? | În media pe zi? |
 |---|---|---|---|
 | variabil | alimente, restaurante, transport | da | da |
 | fix | rate, utilități, abonamente | da | nu |
 | numerar | retrageri ATM | da | nu |
-| excepțional | rambursare anticipată, alte sume mari unice | nu (afișat separat) | nu |
+| excepțional | rambursare anticipată, alte sume mari unice | da (și afișat separat) | nu |
 | intern | transferuri în conturile tale | nu | nu |
 | venit | încasări | nu (afișat separat) | nu |
+
+Totalul de sus, calendarul și rapoartele numără aceleași plăți, deci sumele se leagă.
 
 Ziua unei plăți este **data autorizării** (când ai plătit), nu data decontării,
 care poate fi cu 1–3 zile mai târziu.
 
-Orice plată poate fi mutată în categoria „Excepționale” ca să nu strice media
+Orice plată poate fi mutată în categoria „Excepționale” ca să nu strice media pe zi
 (de ex. o reparație mare la mașină).
 
 ## Date și confidențialitate

@@ -66,3 +66,26 @@ def test_cnp_si_adresa_nu_sunt_pastrate(extras):
 def test_localitate():
     assert parser_ing.localitate("MEGAIMAGE 0261 CRANGS25SG  RO  BUCURESTI") == "BUCURESTI"
     assert parser_ing.localitate("FARA ORAS") == ""
+
+
+def test_format_nou_coloanele_dupa_antet():
+    """Exportul din 25.10.2026: fără „Balanta”, cu „Debit” într-o coloană mai la dreapta."""
+    e = parser_ing.citeste((Path(__file__).parent / "date" / "extras_format_nou.csv").read_bytes())
+    assert [(t.debit, t.credit) for t in e.tranzactii] == [(1086.51, 0.0), (0.0, 5000.0), (1721.89, 0.0)]
+    assert all(t.sold is None for t in e.tranzactii)
+    assert e.tranzactii[0].comerciant == "PROFI BUCURESTI 13"
+    assert e.tranzactii[0].data == date(2026, 10, 20)
+
+
+def test_acelasi_id_in_ambele_formate():
+    """Reimportul aceleiași tranzacții dintr-un export cu alt format nu o dublează."""
+    vechi = parser_ing.citeste(EXEMPLU.read_bytes()).tranzactii
+    nou = parser_ing.citeste((Path(__file__).parent / "date" / "extras_format_nou.csv").read_bytes()).tranzactii
+    rata_veche = next(t for t in vechi if t.tip_operatiune == "Rata Credit")
+    rata_noua = next(t for t in nou if t.tip_operatiune == "Rata Credit")
+    assert rata_veche.id == rata_noua.id
+
+
+def test_antet_fara_coloana_debit():
+    with pytest.raises(ValueError, match="Debit"):
+        parser_ing.citeste("Data,,,Detalii tranzactie,,Suma,Credit\n")

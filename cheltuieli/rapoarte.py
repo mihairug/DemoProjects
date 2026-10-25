@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import pandas as pd
 
-TIPURI_CHELTUIELI = ("variabil", "fix", "numerar")
+TIPURI_CHELTUIELI = ("variabil", "fix", "numerar", "exceptional")
 LUNI = ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie", "iulie", "august",
         "septembrie", "octombrie", "noiembrie", "decembrie"]
 
@@ -25,10 +26,21 @@ def nume_grup(comerciant: str) -> str:
     return s.strip() or comerciant
 
 
-def cheltuieli(df: pd.DataFrame, cu_exceptionale: bool = False) -> pd.DataFrame:
+def _simplu(text: str) -> str:
+    """„Mega Image” și „MEGAIMAGE”, „cafea” și „CAFEA” arată la fel: fără diacritice, spații, semne."""
+    fara_diacritice = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", fara_diacritice.lower())
+
+
+def potriveste(nume: str, cautare: str) -> bool:
+    """Toate cuvintele căutate apar în nume, oriunde, fără să conteze literele mari sau spațiile."""
+    simplu = _simplu(nume)
+    return all(_simplu(cuvant) in simplu for cuvant in cautare.split())
+
+
+def cheltuieli(df: pd.DataFrame) -> pd.DataFrame:
     """Doar ce e cheltuială, cu coloana `suma` pozitivă (rambursările scad din ea)."""
-    tipuri = TIPURI_CHELTUIELI + (("exceptional",) if cu_exceptionale else ())
-    c = df[df["tip"].isin(tipuri)].copy()
+    c = df[df["tip"].isin(TIPURI_CHELTUIELI)].copy()
     c["suma"] = (c["debit"] - c["credit"]).round(2)
     return c
 
@@ -38,9 +50,9 @@ def in_perioada(df: pd.DataFrame, de_la, pana_la) -> pd.DataFrame:
 
 
 def pe_zile(df: pd.DataFrame, de_la, pana_la) -> pd.DataFrame:
-    """Cheltuielile variabile pe fiecare zi din perioadă, inclusiv zilele fără plăți."""
+    """Toate plățile (variabile, fixe, numerar, excepționale) pe fiecare zi din perioadă,
+    inclusiv zilele fără plăți. Fără transferuri proprii și încasări."""
     c = cheltuieli(df)
-    c = c[c["tip"] == "variabil"]
     zile = pd.date_range(de_la, pana_la, freq="D")
     g = c.groupby("data")["suma"].agg(["sum", "count"]).reindex(zile, fill_value=0)
     rez = pd.DataFrame({"data": zile, "suma": g["sum"].round(2).values, "plati": g["count"].values})
@@ -60,13 +72,14 @@ def pe_categorii(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def pe_luni(df: pd.DataFrame) -> pd.DataFrame:
-    """Tabel lună x categorie."""
+    """Tabel lună x categorie, cu totalul pe primul rând."""
     c = cheltuieli(df)
     c["luna"] = c["data"].dt.to_period("M")
     t = c.pivot_table(index="categorie", columns="luna", values="suma", aggfunc="sum", fill_value=0)
     t = t.loc[t.sum(axis=1).sort_values(ascending=False).index]
     t.columns = [f"{LUNI[p.month - 1].capitalize()} {p.year}" for p in t.columns]
-    return t.round(0)
+    total = t.sum().to_frame("Total").T
+    return pd.concat([total, t]).round(0)
 
 
 def top_comercianti(df: pd.DataFrame, n: int = 15) -> pd.DataFrame:

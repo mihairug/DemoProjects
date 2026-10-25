@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -21,10 +21,14 @@ BAZA = Path(os.environ.get("CHELTUIELI_DB", DIR / "date" / "cheltuieli.db"))
 ZILE = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"]
 ZILE_SCURT = ["L", "Ma", "Mi", "J", "V", "S", "D"]
 # culori pentru calendar, de la „puțin” la „mult”
-PRAGURI = [0.01, 50, 150, 300, 600]
-CULORI = ["#e1e0d9", "#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+# zi fără plăți, sub 100, 100–300, peste 300, peste 1000 lei
+PRAGURI = [0.01, 100, 300, 1000]
+CULORI = ["#e1e0d9", "#a8c97f", "#f4a960", "#de5b4f", "#b9a2c8"]
+ETICHETE = ["0", "sub 100", "100–300", "300–1000", "peste 1000 lei"]
 
 st.set_page_config(page_title="Cheltuieli", layout="wide")
+# textul din grafice trebuie să se vadă și pe tema închisă
+CULOARE_TEXT = "#f0efec" if st.context.theme.type == "dark" else "#31333f"
 
 
 @st.cache_resource
@@ -44,6 +48,10 @@ def importa_fisiere(fisiere: list[tuple[str, bytes]]) -> None:
             continue
         if not extras.tranzactii:
             st.sidebar.warning(f"{nume}: nu conține tranzacții în formatul ING")
+            continue
+        if all(t.debit == 0 and t.credit == 0 for t in extras.tranzactii):
+            st.sidebar.error(f"{nume}: toate sumele au ieșit 0 lei, probabil ING a schimbat formatul. "
+                             "Nu l-am importat.")
             continue
         noi, vechi = db.importa(extras)
         st.sidebar.success(f"{nume}: {noi} tranzacții noi" + (f", {vechi} existau deja" if vechi else ""))
@@ -71,6 +79,21 @@ with st.sidebar.expander("Import din folderul de descărcări"):
             st.warning("Nu am găsit niciun fișier.")
         importa_fisiere([(p.name, p.read_bytes()) for p in gasite])
     st.caption("Poți importa același fișier de mai multe ori: tranzacțiile existente nu se dublează.")
+
+with st.sidebar.expander("Șterge datele"):
+    st.write("Șterge toate tranzacțiile din baza de date, de exemplu ca să reimporți extrasele de la zero.")
+    si_alegerile = st.checkbox("Șterge și categoriile alese de mine și bugetele")
+    sigur = st.checkbox("Da, vreau să șterg tot")
+    if st.button("Șterge tot", type="primary", disabled=not sigur):
+        copie = BAZA.with_name(f"{BAZA.stem}_inainte_de_stergere_{datetime.now():%Y-%m-%d_%H-%M-%S}.db")
+        db.backup(copie)
+        n = db.sterge_tot(si_alegerile)
+        st.session_state.pop("ziua", None)
+        st.session_state["mesaj_stergere"] = f"Am șters {n} tranzacții. Copie de siguranță: {copie.name}"
+        st.rerun()
+    st.caption("Înainte de ștergere se face automat o copie a bazei de date în folderul `date`.")
+if "mesaj_stergere" in st.session_state:
+    st.sidebar.success(st.session_state.pop("mesaj_stergere"))
 
 toate = db.tranzactii()
 if toate.empty:
@@ -115,7 +138,7 @@ venit = df[df["tip"] == "venit"]["credit"].sum()
 
 k = st.columns(4)
 k[0].metric("Cheltuieli", r.lei(chelt["suma"].sum()),
-            help="Fără transferurile în conturile tale și fără cheltuielile excepționale.")
+            help="Toate plățile, inclusiv cele excepționale. Fără transferurile în conturile tale și încasări.")
 k[1].metric("Medie pe zi (variabile)", r.lei(chelt[chelt["tip"] == "variabil"]["suma"].sum() / zile),
             help="Fără costuri fixe și numerar.")
 k[2].metric("Numerar retras", r.lei(chelt[chelt["tip"] == "numerar"]["suma"].sum()))
@@ -123,7 +146,7 @@ k[3].metric("De identificat", r.lei(necunoscute["suma"].sum()),
             help="Plăți pe care nu le-am putut încadra. Le rezolvi în tabul „Comercianți”.")
 note = []
 if exceptionale:
-    note.append(f"Excepționale (nu intră în total): {r.lei(exceptionale)}")
+    note.append(f"Din care excepționale: {r.lei(exceptionale)}")
 if venit:
     note.append(f"Încasări: {r.lei(venit)}")
 if note:
@@ -162,7 +185,7 @@ with tab_zile:
             y=alt.Y("zi_sapt:O", title=None, axis=alt.Axis(labelExpr=f"{ZILE_SCURT}[datum.value]", labelOverlap=False)),
             color=alt.Color("suma:Q", title="lei / zi",
                             scale=alt.Scale(type="threshold", domain=PRAGURI, range=CULORI),
-                            legend=alt.Legend(orient="bottom")),
+                            legend=None),
             opacity=alt.condition(selectie, alt.value(1), alt.value(0.35)),
             tooltip=[alt.Tooltip("ziua:N", title="Ziua"), alt.Tooltip("eticheta:N", title="Cheltuit"),
                      alt.Tooltip("plati:Q", title="Plăți")],
@@ -171,42 +194,62 @@ with tab_zile:
         .properties(height=alt.Step(30))
     )
     ev = st.altair_chart(calendar, use_container_width=True, on_select="rerun", key="calendar")
-    st.caption("Apasă pe o zi. În calendar intră doar cheltuielile variabile (fără rate, abonamente, numerar).")
+    st.markdown(
+        " &nbsp; ".join(f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;'
+                        f'background:{c};vertical-align:middle"></span> {t}' for c, t in zip(CULORI, ETICHETE)),
+        unsafe_allow_html=True,
+    )
+    st.caption("Apasă pe o zi. În calendar intră toate plățile: variabile, fixe, numerar și excepționale. "
+               "Nu intră transferurile în conturile tale și încasările.")
 
     puncte = (ev or {}).get("selection", {}).get("zi") or []
     ales = puncte[0].get("ziua") if puncte else None
-    if ales:
-        zi = pd.to_datetime(ales, format="%d.%m.%Y").date()
-    else:
-        zi_maxima = z.loc[z["suma"].idxmax(), "data"].date() if z["suma"].any() else pana_la
-        zi = st.session_state.get("zi", zi_maxima)
-    zi = st.date_input("Ziua", zi, min_value=de_la, max_value=pana_la, format="DD.MM.YYYY")
-    st.session_state["zi"] = zi
+    zi_maxima = z.loc[z["suma"].idxmax(), "data"].date() if z["suma"].any() else pana_la
+    # un clic nou în calendar alege ziua; altfel rămâne cea din câmpul „Ziua”
+    if ales and ales != st.session_state.get("clic_calendar"):
+        st.session_state["ziua"] = pd.to_datetime(ales, format="%d.%m.%Y").date()
+    st.session_state["clic_calendar"] = ales
+    ziua = st.session_state.get("ziua")
+    if ziua is None or not de_la <= ziua <= pana_la:  # ziua aleasă înainte nu e în perioada nouă
+        st.session_state["ziua"] = zi_maxima
+    zi = st.date_input("Ziua", key="ziua", min_value=de_la, max_value=pana_la, format="DD.MM.YYYY")
 
-    din_zi = df[(df["data"] == pd.Timestamp(zi)) & (df["tip"] != "intern")].copy()
+    in_zi = df[df["data"] == pd.Timestamp(zi)]
+    din_zi = r.cheltuieli(in_zi)
     st.subheader(f"{ZILE[zi.weekday()]}, {zi:%d.%m.%Y}")
     if din_zi.empty:
         st.write("Nicio plată în ziua asta.")
     else:
-        din_zi["suma"] = din_zi["debit"] - din_zi["credit"]
-        st.write(f"**{r.lei(din_zi['suma'].sum(), 2)}** în {len(din_zi)} plăți")
-        tabel = din_zi[["id", "comerciant", "categorie", "suma", "valuta", "tip_operatiune"]].reset_index(drop=True)
-        st.data_editor(
-            tabel, key="editor_zi", hide_index=True, use_container_width=True,
-            disabled=["comerciant", "suma", "valuta", "tip_operatiune"],
-            column_order=["comerciant", "categorie", "suma", "valuta", "tip_operatiune"],
-            column_config={
-                "comerciant": "Comerciant",
-                "categorie": st.column_config.SelectboxColumn("Categorie", options=list(categorii.CATEGORII),
-                                                              required=True),
-                "suma": st.column_config.NumberColumn("Lei", format="%.2f"),
-                "valuta": "În valută",
-                "tip_operatiune": "Operațiune",
-            },
-        )
+        variabile = din_zi[din_zi["tip"] == "variabil"]
+        altele = din_zi[din_zi["tip"] != "variabil"]
+        text = f"**{r.lei(din_zi['suma'].sum(), 2)}** în {len(din_zi)} plăți"
+        if not altele.empty and not variabile.empty:
+            text += (f" · din care {r.lei(variabile['suma'].sum(), 2)} variabile și "
+                     f"{r.lei(altele['suma'].sum(), 2)} fixe, numerar sau excepționale")
+        st.write(text)
+        for cheie, titlu, parte in [("editor_zi", "Cheltuieli variabile", variabile),
+                                    ("editor_zi_altele", "Costuri fixe, numerar și excepționale", altele)]:
+            if parte.empty:
+                continue
+            if not altele.empty and not variabile.empty:
+                st.markdown(f"**{titlu}** · {r.lei(parte['suma'].sum(), 2)}")
+            tabel = parte[["id", "comerciant", "categorie", "suma", "valuta", "tip_operatiune"]].reset_index(drop=True)
+            st.data_editor(
+                tabel, key=cheie, hide_index=True, use_container_width=True,
+                disabled=["comerciant", "suma", "valuta", "tip_operatiune"],
+                column_order=["comerciant", "categorie", "suma", "valuta", "tip_operatiune"],
+                column_config={
+                    "comerciant": "Comerciant",
+                    "categorie": st.column_config.SelectboxColumn("Categorie", options=list(categorii.CATEGORII),
+                                                                  required=True),
+                    "suma": st.column_config.NumberColumn("Lei", format="%.2f"),
+                    "valuta": "În valută",
+                    "tip_operatiune": "Operațiune",
+                },
+            )
+            salveaza_editari(cheie, tabel, "id", db.alege_pentru_tranzactie)
         st.caption("Schimbarea categoriei aici se aplică doar acestei plăți. "
                    "Pentru toate plățile la un comerciant, folosește tabul „Comercianți”.")
-        salveaza_editari("editor_zi", tabel, "id", db.alege_pentru_tranzactie)
 
 # --- Rapoarte ------------------------------------------------------------------------
 
@@ -222,7 +265,7 @@ with tab_rap:
     )
     st.altair_chart(
         bare.mark_bar(color="#2a78d6", cornerRadiusEnd=4, height=14)
-        + bare.mark_text(align="left", dx=6).encode(text="eticheta:N"),
+        + bare.mark_text(align="left", dx=6, color=CULOARE_TEXT).encode(text="eticheta:N"),
         use_container_width=True,
     )
 
@@ -262,20 +305,32 @@ with tab_com:
         "Alege categoria o singură dată pentru fiecare comerciant; se aplică automat și la importurile viitoare. "
         "Cei „De identificat” sunt primii în listă."
     )
-    doar_necunoscuti = st.toggle("Doar cei de identificat", value=not necunoscute.empty)
+    cautare = st.text_input("Caută comerciant", placeholder="ex. mega image, emag, marina",
+                            help="Caută în tot istoricul, după o parte din nume. Literele mari, spațiile "
+                                 "și diacriticele nu contează.").strip()
+    doar_necunoscuti = st.toggle("Doar cei de identificat", value=not necunoscute.empty, disabled=bool(cautare))
     com = r.comercianti(toate)  # pe tot istoricul, nu doar în perioada aleasă
-    if doar_necunoscuti:
+    if cautare:
+        com = com[com["comerciant"].map(lambda c: r.potriveste(c, cautare))]
+    elif doar_necunoscuti:
         com = com[com["de_identificat"]]
     oras = toate.set_index("comerciant")["detalii"].map(lambda d: parser_ing.localitate(d.get("Tranzactie la", "")))
     oras = oras[~oras.index.duplicated()]
     com = com.assign(cauta=[
         "https://www.google.com/search?q=" + quote_plus(f"{c} {oras.get(c, '')}") for c in com["comerciant"]
     ]).reset_index(drop=True)
+    cheie_editor = f"editor_com_{cautare}"  # altă căutare, alt tabel: modificările nu se amestecă
     if com.empty:
-        st.success("Toți comercianții au o categorie.")
+        if cautare:
+            st.info(f"Niciun comerciant nu se potrivește cu „{cautare}”.")
+        else:
+            st.success("Toți comercianții au o categorie.")
     else:
+        if cautare:
+            gasiti = "un comerciant găsit" if len(com) == 1 else f"{len(com)} comercianți găsiți"
+            st.caption(f"{gasiti} · {r.lei(com['total'].sum(), 2)} în {com['plati'].sum()} plăți")
         st.data_editor(
-            com, key="editor_com", hide_index=True, use_container_width=True, height=600,
+            com, key=cheie_editor, hide_index=True, use_container_width=True, height=600,
             column_order=["comerciant", "categorie", "plati", "medie", "total", "ultima", "sursa", "cauta"],
             disabled=["comerciant", "plati", "medie", "total", "ultima", "sursa", "cauta"],
             column_config={
@@ -290,7 +345,24 @@ with tab_com:
                 "cauta": st.column_config.LinkColumn("Caută online", display_text="caută"),
             },
         )
-        salveaza_editari("editor_com", com, "comerciant", db.alege_pentru_comerciant)
+        salveaza_editari(cheie_editor, com, "comerciant", db.alege_pentru_comerciant)
+
+        if cautare:
+            st.subheader("Plățile găsite")
+            plati = r.cheltuieli(toate)
+            plati = plati[plati["comerciant"].isin(com["comerciant"])].sort_values("data", ascending=False)
+            st.dataframe(
+                plati[["data", "comerciant", "categorie", "suma", "valuta"]], hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "data": st.column_config.DateColumn("Ziua", format="DD.MM.YYYY"),
+                    "comerciant": "Comerciant", "categorie": "Categorie",
+                    "suma": st.column_config.NumberColumn("Lei", format="%.2f"), "valuta": "În valută",
+                },
+            )
+            pe_luna = plati.groupby(plati["data"].dt.to_period("M"))["suma"].sum()
+            st.caption("Pe luni: " + " · ".join(
+                f"{r.LUNI[p.month - 1]} {r.lei(v)}" for p, v in pe_luna.items()))
 
 # --- Bugete --------------------------------------------------------------------------
 
@@ -298,7 +370,8 @@ with tab_buget:
     st.write("Opțional: pune o limită lunară pe categoriile pe care vrei să le ții sub control. "
              "Lasă gol unde nu vrei buget.")
     bugete = db.bugete()
-    cat_buget = [c for c, t in categorii.CATEGORII.items() if t in ("variabil", "fix") and c != categorii.NECUNOSCUT]
+    cat_buget = [c for c, t in categorii.CATEGORII.items()
+                 if t in ("variabil", "fix", "exceptional") and c != categorii.NECUNOSCUT]
     luna_curenta = pd.Timestamp(ultima).to_period("M")
     istoric = r.cheltuieli(toate).assign(luna=lambda x: x["data"].dt.to_period("M"))
     # doar lunile încheiate și acoperite complet de extrase

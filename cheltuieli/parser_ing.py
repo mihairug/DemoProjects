@@ -92,29 +92,55 @@ def localitate(tranzactie_la: str) -> str:
     return parti[-1] if len(parti) > 1 else ""
 
 
+# Pozițiile coloanelor din exporturile vechi, folosite până la primul rând de antet.
+# ING a mutat coloanele între exporturi (ex. fără „Balanta”, cu „Debit” mutat la dreapta),
+# așa că le căutăm după titlu în fiecare antet „Data,,,Detalii tranzactie,...”.
+COLOANE_IMPLICITE = {"Detalii tranzactie": 3, "Debit": 4, "Credit": 6, "Balanta": 7}
+_COLOANE_OBLIGATORII = ("Detalii tranzactie", "Debit", "Credit")
+
+
+def _coloane(antet: list[str]) -> dict[str, int]:
+    col = {}
+    for i, titlu in enumerate(antet):
+        titlu = titlu.strip()
+        if titlu in COLOANE_IMPLICITE and titlu not in col:
+            col[titlu] = i
+    lipsa = [c for c in _COLOANE_OBLIGATORII if c not in col]
+    if lipsa:
+        raise ValueError(f"antetul extrasului nu are coloanele: {', '.join(lipsa)}")
+    return col
+
+
 def citeste(continut: bytes | str) -> Extras:
     text = _decodeaza(continut) if isinstance(continut, bytes) else continut
     titular = None
     brute: list[dict] = []
     curenta: dict | None = None
+    col = dict(COLOANE_IMPLICITE)
 
     for rand in csv.reader(io.StringIO(text)):
-        rand = (rand + [""] * 8)[:8]
+        rand = rand + [""] * max(0, max(col.values()) + 1 - len(rand))
         prima = rand[0].strip()
         if prima.startswith("Titular cont:"):
             titular = re.sub(r"^(DL|DNA|D-NA|D-L)\.?\s+", "", prima.split(":", 1)[1].strip(), flags=re.I)
             curenta = None
             continue
+        if prima == "Data":
+            col = _coloane(rand)
+            curenta = None
+            continue
         data = _data_lunga(prima)
         if data:
+            sold = rand[col["Balanta"]].strip() if "Balanta" in col else ""
             curenta = {
-                "decontare": data, "tip": rand[3].strip(), "debit": numar(rand[4]),
-                "credit": numar(rand[6]), "sold": numar(rand[7]) if rand[7].strip() else None,
-                "detalii": {},
+                "decontare": data, "tip": rand[col["Detalii tranzactie"]].strip(),
+                "debit": numar(rand[col["Debit"]]), "credit": numar(rand[col["Credit"]]),
+                "sold": numar(sold) if sold else None, "detalii": {},
             }
             brute.append(curenta)
-        elif curenta is not None and not prima and not rand[1].strip() and rand[3].strip():
-            cheie, _, valoare = rand[3].strip().partition(":")
+        elif (curenta is not None and not prima and not rand[1].strip()
+              and rand[col["Detalii tranzactie"]].strip()):
+            cheie, _, valoare = rand[col["Detalii tranzactie"]].strip().partition(":")
             curenta["detalii"][cheie.strip()] = valoare.strip()
         else:
             # semnături, antet de tabel etc. închid tranzacția curentă
