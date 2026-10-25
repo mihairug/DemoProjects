@@ -24,6 +24,7 @@ ZILE_SCURT = ["L", "Ma", "Mi", "J", "V", "S", "D"]
 # zi fără plăți, sub 100, 100–300, peste 300, peste 1000 lei
 PRAGURI = [0.01, 100, 300, 1000]
 CULORI = ["#e1e0d9", "#a8c97f", "#f4a960", "#de5b4f", "#b9a2c8"]
+ETICHETE = ["0", "sub 100", "100–300", "300–1000", "peste 1000 lei"]
 
 st.set_page_config(page_title="Cheltuieli", layout="wide")
 
@@ -182,7 +183,7 @@ with tab_zile:
             y=alt.Y("zi_sapt:O", title=None, axis=alt.Axis(labelExpr=f"{ZILE_SCURT}[datum.value]", labelOverlap=False)),
             color=alt.Color("suma:Q", title="lei / zi",
                             scale=alt.Scale(type="threshold", domain=PRAGURI, range=CULORI),
-                            legend=alt.Legend(orient="bottom")),
+                            legend=None),
             opacity=alt.condition(selectie, alt.value(1), alt.value(0.35)),
             tooltip=[alt.Tooltip("ziua:N", title="Ziua"), alt.Tooltip("eticheta:N", title="Cheltuit"),
                      alt.Tooltip("plati:Q", title="Plăți")],
@@ -191,6 +192,11 @@ with tab_zile:
         .properties(height=alt.Step(30))
     )
     ev = st.altair_chart(calendar, use_container_width=True, on_select="rerun", key="calendar")
+    st.markdown(
+        " &nbsp; ".join(f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;'
+                        f'background:{c};vertical-align:middle"></span> {t}' for c, t in zip(CULORI, ETICHETE)),
+        unsafe_allow_html=True,
+    )
     st.caption("Apasă pe o zi. În calendar intră doar cheltuielile variabile (fără rate, abonamente, numerar).")
 
     puncte = (ev or {}).get("selection", {}).get("zi") or []
@@ -211,24 +217,36 @@ with tab_zile:
         st.write("Nicio plată în ziua asta.")
     else:
         din_zi["suma"] = din_zi["debit"] - din_zi["credit"]
-        st.write(f"**{r.lei(din_zi['suma'].sum(), 2)}** în {len(din_zi)} plăți")
-        tabel = din_zi[["id", "comerciant", "categorie", "suma", "valuta", "tip_operatiune"]].reset_index(drop=True)
-        st.data_editor(
-            tabel, key="editor_zi", hide_index=True, use_container_width=True,
-            disabled=["comerciant", "suma", "valuta", "tip_operatiune"],
-            column_order=["comerciant", "categorie", "suma", "valuta", "tip_operatiune"],
-            column_config={
-                "comerciant": "Comerciant",
-                "categorie": st.column_config.SelectboxColumn("Categorie", options=list(categorii.CATEGORII),
-                                                              required=True),
-                "suma": st.column_config.NumberColumn("Lei", format="%.2f"),
-                "valuta": "În valută",
-                "tip_operatiune": "Operațiune",
-            },
-        )
+        variabile = din_zi[din_zi["tip"] == "variabil"]
+        altele = din_zi[din_zi["tip"] != "variabil"]
+        text = f"**{r.lei(variabile['suma'].sum(), 2)}** în {len(variabile)} plăți variabile (suma din calendar)"
+        if not altele.empty:
+            text += (f" · plus **{r.lei(altele['suma'].sum(), 2)}** în {len(altele)} plăți fixe, numerar "
+                     f"sau excepționale · total zi {r.lei(din_zi['suma'].sum(), 2)}")
+        st.write(text)
+        for cheie, titlu, parte in [("editor_zi", "Cheltuieli variabile", variabile),
+                                    ("editor_zi_altele", "Costuri fixe, numerar și excepționale", altele)]:
+            if parte.empty:
+                continue
+            if not altele.empty:
+                st.markdown(f"**{titlu}** · {r.lei(parte['suma'].sum(), 2)}")
+            tabel = parte[["id", "comerciant", "categorie", "suma", "valuta", "tip_operatiune"]].reset_index(drop=True)
+            st.data_editor(
+                tabel, key=cheie, hide_index=True, use_container_width=True,
+                disabled=["comerciant", "suma", "valuta", "tip_operatiune"],
+                column_order=["comerciant", "categorie", "suma", "valuta", "tip_operatiune"],
+                column_config={
+                    "comerciant": "Comerciant",
+                    "categorie": st.column_config.SelectboxColumn("Categorie", options=list(categorii.CATEGORII),
+                                                                  required=True),
+                    "suma": st.column_config.NumberColumn("Lei", format="%.2f"),
+                    "valuta": "În valută",
+                    "tip_operatiune": "Operațiune",
+                },
+            )
+            salveaza_editari(cheie, tabel, "id", db.alege_pentru_tranzactie)
         st.caption("Schimbarea categoriei aici se aplică doar acestei plăți. "
                    "Pentru toate plățile la un comerciant, folosește tabul „Comercianți”.")
-        salveaza_editari("editor_zi", tabel, "id", db.alege_pentru_tranzactie)
 
 # --- Rapoarte ------------------------------------------------------------------------
 
