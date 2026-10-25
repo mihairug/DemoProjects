@@ -60,13 +60,14 @@ def pe_categorii(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def pe_luni(df: pd.DataFrame) -> pd.DataFrame:
-    """Tabel lună x categorie."""
+    """Tabel lună x categorie, cu totalul pe primul rând."""
     c = cheltuieli(df)
     c["luna"] = c["data"].dt.to_period("M")
     t = c.pivot_table(index="categorie", columns="luna", values="suma", aggfunc="sum", fill_value=0)
     t = t.loc[t.sum(axis=1).sort_values(ascending=False).index]
     t.columns = [f"{LUNI[p.month - 1].capitalize()} {p.year}" for p in t.columns]
-    return t.round(0)
+    total = t.sum().to_frame("Total").T
+    return pd.concat([total, t]).round(0)
 
 
 def top_comercianti(df: pd.DataFrame, n: int = 15) -> pd.DataFrame:

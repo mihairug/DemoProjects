@@ -86,3 +86,9 @@ def test_buget(db):
     b = r.buget(db.tranzactii(), {"Alimente": 10}, pd.Period("2026-10", "M"))
     rand = b.iloc[0]
     assert rand["cheltuit"] == 21.18 and rand["ramas"] < 0
+
+
+def test_pe_luni_are_totalul_pe_primul_rand(db):
+    t = r.pe_luni(db.tranzactii())
+    assert t.index[0] == "Total"
+    assert t.iloc[0].sum() == t.iloc[1:].sum().sum()

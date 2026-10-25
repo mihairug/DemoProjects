@@ -21,8 +21,9 @@ BAZA = Path(os.environ.get("CHELTUIELI_DB", DIR / "date" / "cheltuieli.db"))
 ZILE = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"]
 ZILE_SCURT = ["L", "Ma", "Mi", "J", "V", "S", "D"]
 # culori pentru calendar, de la „puțin” la „mult”
-PRAGURI = [0.01, 50, 150, 300, 600]
-CULORI = ["#e1e0d9", "#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
+# zi fără plăți, sub 100, 100–300, peste 300, peste 1000 lei
+PRAGURI = [0.01, 100, 300, 1000]
+CULORI = ["#e1e0d9", "#a8c97f", "#f4a960", "#de5b4f", "#b9a2c8"]
 
 st.set_page_config(page_title="Cheltuieli", layout="wide")
 
@@ -44,6 +45,10 @@ def importa_fisiere(fisiere: list[tuple[str, bytes]]) -> None:
             continue
         if not extras.tranzactii:
             st.sidebar.warning(f"{nume}: nu conține tranzacții în formatul ING")
+            continue
+        if all(t.debit == 0 and t.credit == 0 for t in extras.tranzactii):
+            st.sidebar.error(f"{nume}: toate sumele au ieșit 0 lei, probabil ING a schimbat formatul. "
+                             "Nu l-am importat.")
             continue
         noi, vechi = db.importa(extras)
         st.sidebar.success(f"{nume}: {noi} tranzacții noi" + (f", {vechi} existau deja" if vechi else ""))
