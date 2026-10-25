@@ -38,9 +38,9 @@ def in_perioada(df: pd.DataFrame, de_la, pana_la) -> pd.DataFrame:
 
 
 def pe_zile(df: pd.DataFrame, de_la, pana_la) -> pd.DataFrame:
-    """Cheltuielile variabile pe fiecare zi din perioadă, inclusiv zilele fără plăți."""
-    c = cheltuieli(df)
-    c = c[c["tip"] == "variabil"]
+    """Toate plățile (variabile, fixe, numerar, excepționale) pe fiecare zi din perioadă,
+    inclusiv zilele fără plăți. Fără transferuri proprii și încasări."""
+    c = cheltuieli(df, cu_exceptionale=True)
     zile = pd.date_range(de_la, pana_la, freq="D")
     g = c.groupby("data")["suma"].agg(["sum", "count"]).reindex(zile, fill_value=0)
     rez = pd.DataFrame({"data": zile, "suma": g["sum"].round(2).values, "plati": g["count"].values})

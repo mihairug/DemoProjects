@@ -64,8 +64,9 @@ def test_cheltuieli_exclud_transferuri_proprii_si_incasari(db):
 def test_pe_zile_completeaza_zilele_goale(db):
     z = r.pe_zile(db.tranzactii(), date(2026, 10, 14), date(2026, 10, 20))
     assert len(z) == 7
-    assert z.set_index("data").loc["2026-10-20", "suma"] == round(21.18 + 1086.51, 2)
-    assert z.set_index("data").loc["2026-10-15", "suma"] == 0  # rata e cost fix, nu variabil
+    assert z.set_index("data").loc["2026-10-20", "suma"] == round(21.18 + 1086.51 + 900, 2)  # și numerarul
+    assert z.set_index("data").loc["2026-10-15", "suma"] == 1721.89  # și costurile fixe intră
+    assert z.set_index("data").loc["2026-10-19", "suma"] == 140  # transferul în cont propriu nu intră
     assert z.set_index("data").loc["2026-10-16", "suma"] == -50  # rambursarea eMAG
 
 

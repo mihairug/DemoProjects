@@ -86,7 +86,7 @@ with st.sidebar.expander("Șterge datele"):
         copie = BAZA.with_name(f"{BAZA.stem}_inainte_de_stergere_{datetime.now():%Y-%m-%d_%H-%M-%S}.db")
         db.backup(copie)
         n = db.sterge_tot(si_alegerile)
-        st.session_state.pop("zi", None)
+        st.session_state.pop("ziua", None)
         st.session_state["mesaj_stergere"] = f"Am șters {n} tranzacții. Copie de siguranță: {copie.name}"
         st.rerun()
     st.caption("Înainte de ștergere se face automat o copie a bazei de date în folderul `date`.")
@@ -197,38 +197,39 @@ with tab_zile:
                         f'background:{c};vertical-align:middle"></span> {t}' for c, t in zip(CULORI, ETICHETE)),
         unsafe_allow_html=True,
     )
-    st.caption("Apasă pe o zi. În calendar intră doar cheltuielile variabile (fără rate, abonamente, numerar).")
+    st.caption("Apasă pe o zi. În calendar intră toate plățile: variabile, fixe, numerar și excepționale. "
+               "Nu intră transferurile în conturile tale și încasările.")
 
     puncte = (ev or {}).get("selection", {}).get("zi") or []
     ales = puncte[0].get("ziua") if puncte else None
     zi_maxima = z.loc[z["suma"].idxmax(), "data"].date() if z["suma"].any() else pana_la
-    if ales:
-        zi = pd.to_datetime(ales, format="%d.%m.%Y").date()
-    else:
-        zi = st.session_state.get("zi", zi_maxima)
-    if not de_la <= zi <= pana_la:  # ziua aleasă înainte nu e în perioada nouă
-        zi = zi_maxima
-    zi = st.date_input("Ziua", zi, min_value=de_la, max_value=pana_la, format="DD.MM.YYYY")
-    st.session_state["zi"] = zi
+    # un clic nou în calendar alege ziua; altfel rămâne cea din câmpul „Ziua”
+    if ales and ales != st.session_state.get("clic_calendar"):
+        st.session_state["ziua"] = pd.to_datetime(ales, format="%d.%m.%Y").date()
+    st.session_state["clic_calendar"] = ales
+    ziua = st.session_state.get("ziua")
+    if ziua is None or not de_la <= ziua <= pana_la:  # ziua aleasă înainte nu e în perioada nouă
+        st.session_state["ziua"] = zi_maxima
+    zi = st.date_input("Ziua", key="ziua", min_value=de_la, max_value=pana_la, format="DD.MM.YYYY")
 
-    din_zi = df[(df["data"] == pd.Timestamp(zi)) & (df["tip"] != "intern")].copy()
+    in_zi = df[df["data"] == pd.Timestamp(zi)]
+    din_zi = r.cheltuieli(in_zi, cu_exceptionale=True)
     st.subheader(f"{ZILE[zi.weekday()]}, {zi:%d.%m.%Y}")
     if din_zi.empty:
         st.write("Nicio plată în ziua asta.")
     else:
-        din_zi["suma"] = din_zi["debit"] - din_zi["credit"]
         variabile = din_zi[din_zi["tip"] == "variabil"]
         altele = din_zi[din_zi["tip"] != "variabil"]
-        text = f"**{r.lei(variabile['suma'].sum(), 2)}** în {len(variabile)} plăți variabile (suma din calendar)"
-        if not altele.empty:
-            text += (f" · plus **{r.lei(altele['suma'].sum(), 2)}** în {len(altele)} plăți fixe, numerar "
-                     f"sau excepționale · total zi {r.lei(din_zi['suma'].sum(), 2)}")
+        text = f"**{r.lei(din_zi['suma'].sum(), 2)}** în {len(din_zi)} plăți"
+        if not altele.empty and not variabile.empty:
+            text += (f" · din care {r.lei(variabile['suma'].sum(), 2)} variabile și "
+                     f"{r.lei(altele['suma'].sum(), 2)} fixe, numerar sau excepționale")
         st.write(text)
         for cheie, titlu, parte in [("editor_zi", "Cheltuieli variabile", variabile),
                                     ("editor_zi_altele", "Costuri fixe, numerar și excepționale", altele)]:
             if parte.empty:
                 continue
-            if not altele.empty:
+            if not altele.empty and not variabile.empty:
                 st.markdown(f"**{titlu}** · {r.lei(parte['suma'].sum(), 2)}")
             tabel = parte[["id", "comerciant", "categorie", "suma", "valuta", "tip_operatiune"]].reset_index(drop=True)
             st.data_editor(
