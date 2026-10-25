@@ -27,6 +27,8 @@ CULORI = ["#e1e0d9", "#a8c97f", "#f4a960", "#de5b4f", "#b9a2c8"]
 ETICHETE = ["0", "sub 100", "100–300", "300–1000", "peste 1000 lei"]
 
 st.set_page_config(page_title="Cheltuieli", layout="wide")
+# textul din grafice trebuie să se vadă și pe tema închisă
+CULOARE_TEXT = "#f0efec" if st.context.theme.type == "dark" else "#31333f"
 
 
 @st.cache_resource
@@ -136,7 +138,7 @@ venit = df[df["tip"] == "venit"]["credit"].sum()
 
 k = st.columns(4)
 k[0].metric("Cheltuieli", r.lei(chelt["suma"].sum()),
-            help="Fără transferurile în conturile tale și fără cheltuielile excepționale.")
+            help="Toate plățile, inclusiv cele excepționale. Fără transferurile în conturile tale și încasări.")
 k[1].metric("Medie pe zi (variabile)", r.lei(chelt[chelt["tip"] == "variabil"]["suma"].sum() / zile),
             help="Fără costuri fixe și numerar.")
 k[2].metric("Numerar retras", r.lei(chelt[chelt["tip"] == "numerar"]["suma"].sum()))
@@ -144,7 +146,7 @@ k[3].metric("De identificat", r.lei(necunoscute["suma"].sum()),
             help="Plăți pe care nu le-am putut încadra. Le rezolvi în tabul „Comercianți”.")
 note = []
 if exceptionale:
-    note.append(f"Excepționale (nu intră în total): {r.lei(exceptionale)}")
+    note.append(f"Din care excepționale: {r.lei(exceptionale)}")
 if venit:
     note.append(f"Încasări: {r.lei(venit)}")
 if note:
@@ -213,7 +215,7 @@ with tab_zile:
     zi = st.date_input("Ziua", key="ziua", min_value=de_la, max_value=pana_la, format="DD.MM.YYYY")
 
     in_zi = df[df["data"] == pd.Timestamp(zi)]
-    din_zi = r.cheltuieli(in_zi, cu_exceptionale=True)
+    din_zi = r.cheltuieli(in_zi)
     st.subheader(f"{ZILE[zi.weekday()]}, {zi:%d.%m.%Y}")
     if din_zi.empty:
         st.write("Nicio plată în ziua asta.")
@@ -263,7 +265,7 @@ with tab_rap:
     )
     st.altair_chart(
         bare.mark_bar(color="#2a78d6", cornerRadiusEnd=4, height=14)
-        + bare.mark_text(align="left", dx=6).encode(text="eticheta:N"),
+        + bare.mark_text(align="left", dx=6, color=CULOARE_TEXT).encode(text="eticheta:N"),
         use_container_width=True,
     )
 

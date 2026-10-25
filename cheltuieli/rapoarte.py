@@ -6,7 +6,7 @@ import re
 
 import pandas as pd
 
-TIPURI_CHELTUIELI = ("variabil", "fix", "numerar")
+TIPURI_CHELTUIELI = ("variabil", "fix", "numerar", "exceptional")
 LUNI = ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie", "iulie", "august",
         "septembrie", "octombrie", "noiembrie", "decembrie"]
 
@@ -25,10 +25,9 @@ def nume_grup(comerciant: str) -> str:
     return s.strip() or comerciant
 
 
-def cheltuieli(df: pd.DataFrame, cu_exceptionale: bool = False) -> pd.DataFrame:
+def cheltuieli(df: pd.DataFrame) -> pd.DataFrame:
     """Doar ce e cheltuială, cu coloana `suma` pozitivă (rambursările scad din ea)."""
-    tipuri = TIPURI_CHELTUIELI + (("exceptional",) if cu_exceptionale else ())
-    c = df[df["tip"].isin(tipuri)].copy()
+    c = df[df["tip"].isin(TIPURI_CHELTUIELI)].copy()
     c["suma"] = (c["debit"] - c["credit"]).round(2)
     return c
 
@@ -40,7 +39,7 @@ def in_perioada(df: pd.DataFrame, de_la, pana_la) -> pd.DataFrame:
 def pe_zile(df: pd.DataFrame, de_la, pana_la) -> pd.DataFrame:
     """Toate plățile (variabile, fixe, numerar, excepționale) pe fiecare zi din perioadă,
     inclusiv zilele fără plăți. Fără transferuri proprii și încasări."""
-    c = cheltuieli(df, cu_exceptionale=True)
+    c = cheltuieli(df)
     zile = pd.date_range(de_la, pana_la, freq="D")
     g = c.groupby("data")["suma"].agg(["sum", "count"]).reindex(zile, fill_value=0)
     rez = pd.DataFrame({"data": zile, "suma": g["sum"].round(2).values, "plati": g["count"].values})
